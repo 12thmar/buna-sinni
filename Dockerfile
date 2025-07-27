@@ -1,12 +1,19 @@
-# Build stage
-FROM node:18 as build
-WORKDIR /app
-COPY . .
-RUN npm install
-RUN npm run build
+FROM node:18
 
-# Serve stage
-FROM nginx:alpine
-COPY --from=build /app/build /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+# Set working directory
+WORKDIR /app
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Clean install
+RUN npm install
+
+# Copy rest of your app
+COPY . .
+
+# Expose Vite dev server port
+EXPOSE 5173
+
+# Start dev server with external access
+CMD ["npm", "run", "dev", "--", "--host"]
