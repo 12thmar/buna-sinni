@@ -32,9 +32,8 @@ jobs:
           AWS_REGION: us-east-1 # or your region
           SOURCE_DIR: ./dist
       
-      - name: Debug Env Vars
-        run: |
-            echo "Distribution: $DISTRIBUTION"
+      - name: Debug CloudFront Distribution ID
+        run: echo "DISTRIBUTION=$DISTRIBUTION"
         env:
           DISTRIBUTION: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
 
