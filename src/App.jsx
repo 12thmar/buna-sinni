@@ -1,7 +1,7 @@
 import React from "react";
 
 function App() {
-  return <h1>Welcome to ETH Buna Sinni!</h1>;
+  return <h1>Welcome to Buna Sinni!</h1>;
 }
 
 export default App;
