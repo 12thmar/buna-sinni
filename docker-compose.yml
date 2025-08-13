@@ -19,5 +19,5 @@ services:
 
 networks:
   buna-network:
-    external: true
+    driver: bridge
 

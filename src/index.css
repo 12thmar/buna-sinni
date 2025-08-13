@@ -1,0 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root{ --coffee:#B85C38; --coffee-dark:#8B5A2B; --cream:#F2E3D5; }
+html,body,#root{height:100%}
+body{ @apply text-neutral-800 bg-white antialiased; }
