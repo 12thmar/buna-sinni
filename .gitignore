@@ -4,6 +4,9 @@ __pycache__
 # Ignore Node.js dependencies
 node_modules/
 .env
+**/node_modules
+**/.git
+**/.DS_Store
 
 # Ignore Docker-related files
 *.log

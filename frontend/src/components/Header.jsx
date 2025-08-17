@@ -1,3 +1,5 @@
+import { Logo } from "./Logo";
+
 export default function Header() {
   return (
     <header className="w-full border-b">
@@ -7,10 +9,9 @@ export default function Header() {
         </div>
       </div>
       <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
-        <a href="/" className="flex items-center gap-2">
-          <img src="/logo.png" alt="BunaRoots" className="h-10 w-10 object-contain" onError={(e)=>{ e.currentTarget.style.display='none'; }} />
-          <span className="font-semibold text-lg tracking-wide">BunaRoots</span>
-        </a>
+        
+        <Logo />
+
         <nav className="ml-auto hidden md:flex items-center gap-6 text-sm">
           {["Home","Testimonials","Sourcing","Newsletter","Products","Contact Us"].map(i=>(
             <a key={i} href="#" className="hover:text-[var(--coffee)] transition">{i}</a>

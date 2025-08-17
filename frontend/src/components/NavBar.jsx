@@ -10,7 +10,7 @@ export function NavBar({ links = defaultLinks }) {
         <button className="lg:hidden p-2" onClick={() => setOpen(true)} aria-label="Open menu">
           <Menu className="w-6 h-6" />
         </button>
-        <Logo />
+        <Logo showText={false} />
 
         {/* Search */}
         <div className="hidden md:flex items-center gap-2 flex-1 max-w-lg mx-auto">

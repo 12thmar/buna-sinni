@@ -29,7 +29,7 @@ export default function Offerings(){
       </div>
 
       <div className="text-center mt-8">
-        <a href="/products" className="inline-flex rounded-full bg-neutral-900 text-white px-5 py-2.5 hover:bg-neutral-700 transition">
+        <a href="/#" className="inline-flex rounded-full bg-neutral-900 text-white px-5 py-2.5 hover:bg-neutral-700 transition">
           Browse All Coffee
         </a>
       </div>
