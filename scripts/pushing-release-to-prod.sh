@@ -1,9 +1,7 @@
 #git branch -D release/2025-08-18
 #git push origin --delete release/2025-08-18
-git fetch origin
+# make sure everything is committed & pushed locally first
+git fetch origin --prune
 git checkout release/2025-08-17
-( cd frontend && npm ci --include=dev && npm run build )
-git merge origin/prod      # or: git rebase origin/prod
-# resolve any conflicts
- # quick sanity build
-git push
+# deploy your release branch instead
+git push origin release/2025-08-19:prod
