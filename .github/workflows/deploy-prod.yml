@@ -45,11 +45,30 @@ jobs:
             --exclude "index.html" \
             --cache-control "public, max-age=31536000, immutable"
 
-      - name: Upload index.html (no cache)
-        run: |
-          aws s3 cp dist/index.html s3://${{ secrets.S3_BUCKET }}/index.html \
-            --cache-control "no-store, no-cache, max-age=0, must-revalidate" \
-            --content-type "text/html; charset=utf-8"
+      - name: Deploy to S3
+        uses: jakejarvis/s3-sync-action@master
+        with:
+          args: --delete
+        env:
+          AWS_S3_BUCKET: buna-sinni-assets
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1 # or your region
+          SOURCE_DIR: ./dist
+      
+      - name: Debug CloudFront Distribution ID
+        run: echo "DISTRIBUTION=$DISTRIBUTION"
+        env:
+          DISTRIBUTION: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+
+      - name: Invalidate CloudFront Cache
+        uses: chetan/invalidate-cloudfront-action@v2
+        env:
+          AWS_REGION: us-east-1
+          DISTRIBUTION: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+          PATHS: "/*"
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Invalidate CloudFront
         run: |
