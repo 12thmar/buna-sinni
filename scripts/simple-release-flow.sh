@@ -45,4 +45,4 @@ else
     echo "==> Open this URL to create the PR:"
     echo "${PR_URL}"
   else
-    echo "⚠️ Could not detect GitHub repo URL. Install GitH
+    echo "⚠️ Could not detect GitHub repo URL. Install GitHub"
