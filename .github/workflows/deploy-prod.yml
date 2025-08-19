@@ -1,25 +1,31 @@
+name: Deploy frontend to S3 + CloudFront
+
 on:
   push:
-    branches:
-      - prod
+    branches: [ "prod" ]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: true
     defaults:
       run:
-        working-directory: frontend   # <-- build from your frontend folder
-
+        working-directory: frontend   # build from your frontend folder
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node 20
+      - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Install deps (incl: dev deps)
+      - name: Install deps (incl dev)
         run: npm ci --include=dev
 
       - name: Build
@@ -28,13 +34,10 @@ jobs:
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          AWS_REGION: us-east-1
-          AWS_S3_BUCKET: buna-sinni-prod
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Long-cache all hashed assets (safe to cache)
       - name: Upload assets (cache forever)
         run: |
           aws s3 sync dist/ s3://${{ secrets.S3_BUCKET }}/ \
@@ -42,7 +45,6 @@ jobs:
             --exclude "index.html" \
             --cache-control "public, max-age=31536000, immutable"
 
-      # No-cache HTML so updates show immediately
       - name: Upload index.html (no cache)
         run: |
           aws s3 cp dist/index.html s3://${{ secrets.S3_BUCKET }}/index.html \
