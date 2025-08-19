@@ -45,4 +45,8 @@ else
     echo "==> Open this URL to create the PR:"
     echo "${PR_URL}"
   else
-    echo "⚠️ Could not detect GitHub repo URL. Install GitHub"
+    echo "⚠️ Could not detect GitHub repo URL. Install GitHub CLI (gh) for auto-PR."
+  fi
+fi
+
+echo "✅ Release branch ready: ${REL_BRANCH}. Merge the PR into ${BASE_BRANCH} to deploy."
