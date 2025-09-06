@@ -78,6 +78,8 @@ jobs:
             ["webp"]="image/webp"
             ["avif"]="image/avif"
             ["woff2"]="font/woff2"
+            ["map"]="application/json"     # ← new (source maps)
+            ["json"]="application/json"    # ← new (any JSON assets)
           )
           for ext in "${!MAP[@]}"; do
             aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/assets/ s3://${{ secrets.AWS_S3_BUCKET }}/assets/ \
@@ -112,71 +114,80 @@ jobs:
           echo "INVALIDATION_ID=$INVALIDATION_ID" >> $GITHUB_ENV
           echo "Created invalidation: $INVALIDATION_ID"
 
-      - name: Wait for CloudFront invalidation (no ListInvalidations)
+      - name: Try waiting for invalidation (skip if not permitted)
         env:
           DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
         run: |
           set -euo pipefail
-          if [ -z "${INVALIDATION_ID:-}" ]; then
-            echo "::warning::No INVALIDATION_ID available; skipping wait."
-            exit 0
-          fi
-          # This requires only cloudfront:GetInvalidation
-          if ! aws cloudfront wait invalidation-completed \
-                --distribution-id "$DISTRIBUTION_ID" \
-                --id "$INVALIDATION_ID"; then
-            echo "::warning::Wait failed or not permitted. Will rely on edge retries next."
+          if [ -n "${INVALIDATION_ID:-}" ]; then
+            # Requires only cloudfront:GetInvalidation; ignore AccessDenied
+            aws cloudfront wait invalidation-completed \
+              --distribution-id "$DISTRIBUTION_ID" \
+              --id "$INVALIDATION_ID" || echo "::warning::Skipping wait (no GetInvalidation permission)."
           fi
 
-      - name: Edge smoke-test (retry until fresh)
+      - name: Edge smoke-test (bytes only; no curl 23 noise)
         env:
           DOMAIN: www.bunaroots.com
         run: |
           set -euo pipefail
-          # Derive the paths from the built index.html (we exported these earlier, but re-derive if missing)
           JS_FILE="${JS_FILE:-$(grep -o 'assets/index-[^"]*\.js' dist/index.html | head -n1)}"
           CSS_FILE="${CSS_FILE:-$(grep -o 'assets/index-[^"]*\.css' dist/index.html | head -n1)}"
-          echo "Testing https://$DOMAIN/$JS_FILE and $DOMAIN/$CSS_FILE"
+          echo "Testing https://$DOMAIN/$JS_FILE and https://$DOMAIN/$CSS_FILE"
 
-          check_one() {
+          check() {
             local path="$1" expect="$2"
+            echo "---- HEAD https://$DOMAIN/$path"
             headers=$(curl -sS -I "https://$DOMAIN/$path" || true)
+            echo "$headers"
             status=$(echo "$headers" | awk '/^HTTP/{print $2}' | tail -1)
             ct=$(echo "$headers" | awk -F': ' 'tolower($1)=="content-type"{print tolower($2)}' | tr -d '\r')
-            body_head=$(curl -sS "https://$DOMAIN/$path" | head -c 120 || true)
-
-            if [ "$status" != "200" ]; then
-              echo "STATUS=$status for $path"
-              return 1
+            [ "$status" = "200" ] || { echo "::error::Edge returned $status for $path"; exit 1; }
+            if [ "$expect" = "js" ]; then
+              [[ "$ct" == application/javascript* || "$ct" == text/javascript* ]] || { echo "::error::Wrong Content-Type for $path: $ct"; exit 1; }
+            else
+              [[ "$ct" == text/css* ]] || { echo "::error::Wrong Content-Type for $path: $ct"; exit 1; }
             fi
-            if [ "$expect" = "js" ] && [[ "$ct" != application/javascript* && "$ct" != text/javascript* ]]; then
-              echo "Wrong CT ($ct) for $path"
-              return 1
-            fi
-            if [ "$expect" = "css" ] && [[ "$ct" != text/css* ]]; then
-              echo "Wrong CT ($ct) for $path"
-              return 1
-            fi
+            # Fetch only first 120 bytes (avoid curl 23 broken pipe)
+            body_head=$(curl -sS --range 0-119 "https://$DOMAIN/$path" 2>/dev/null || true)
             if [[ "$body_head" == "<!DOCTYPE html>"* || "$body_head" == "<html"* ]]; then
-              echo "Got HTML for $path (likely stale edge or missing object)"
-              return 1
+              echo "::error::Got HTML for $path (likely SPA rewrite/missing object)."
+              echo "$body_head"
+              exit 1
             fi
-            return 0
+            echo "OK: $path"
           }
 
-          # Retry up to ~2 minutes for edges to pick up fresh objects
-          for i in $(seq 1 12); do
-            echo "Attempt $i/12 ..."
-            if check_one "$JS_FILE" js && check_one "$CSS_FILE" css; then
-              echo "Edge OK"
-              exit 0
-            fi
-            sleep 10
-          done
+          check "$JS_FILE" js
+          check "$CSS_FILE" css
+      
+      - name: Install Playwright (ephemeral)
+        run: |
+          npm i -D playwright
+          npx playwright install --with-deps chromium
 
-          echo "::error::Edge still serving wrong content after retries."
-          echo "Debug JS HEAD:"
-          curl -I "https://$DOMAIN/$JS_FILE" || true
-          echo "Debug CSS HEAD:"
-          curl -I "https://$DOMAIN/$CSS_FILE" || true
-          exit 1
+      - name: Runtime smoke-test (fail on console/page errors)
+        run: |
+          node - <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const url = 'https://www.bunaroots.com/';
+            const browser = await chromium.launch();
+            const page = await browser.newPage();
+            const errs = [];
+            page.on('pageerror', e => errs.push('pageerror: ' + e.message));
+            page.on('console', m => { if (m.type() === 'error') errs.push('console.error: ' + m.text()); });
+            page.on('requestfailed', r => errs.push('requestfailed: ' + r.url() + ' :: ' + (r.failure()?.errorText || '')));
+            await page.goto(url, { waitUntil: 'networkidle' });
+            const childCount = await page.evaluate(() => document.getElementById('root')?.childElementCount || 0);
+            if (childCount === 0) errs.push('root has no children after load');
+            if (errs.length) {
+              console.log('--- Runtime errors detected ---');
+              for (const e of errs) console.log(e);
+              await browser.close();
+              process.exit(1);
+            }
+            console.log('Runtime OK');
+            await browser.close();
+          })().catch(e => { console.error(e); process.exit(1); });
+          NODE
