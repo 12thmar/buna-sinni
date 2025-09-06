@@ -100,6 +100,7 @@ jobs:
           aws s3api head-object --bucket "${{ secrets.AWS_S3_BUCKET }}" --key "$CSS_FILE" \
             --query '{Key:Key,CT:ContentType,Cache:CacheControl}' || true
 
+
       - name: Invalidate CloudFront
         env:
           DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
@@ -107,3 +108,4 @@ jobs:
           aws cloudfront create-invalidation \
             --distribution-id "$DISTRIBUTION_ID" \
             --paths "/*"
+
