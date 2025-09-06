@@ -69,18 +69,36 @@ jobs:
         run: |
           aws s3 sync dist/ "$S3_BASE/" --delete
 
-      - name: Fix MIME types + cache headers (respects prefix)
+            - name: Compute S3 base (handles Origin Path/prefix)
+        run: |
+          S3_BUCKET="${{ secrets.AWS_S3_BUCKET }}"
+          S3_PREFIX="${{ secrets.AWS_S3_PREFIX }}"   # e.g. "prod" if your origin path is /prod; else leave secret empty
+          S3_BASE="s3://$S3_BUCKET"
+          if [ -n "$S3_PREFIX" ]; then S3_BASE="$S3_BASE/$S3_PREFIX"; fi
+          echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
+          echo "S3_PREFIX=$S3_PREFIX" >> $GITHUB_ENV
+          echo "S3_BASE=$S3_BASE" >> $GITHUB_ENV
+          echo "Using S3_BASE=$S3_BASE"
+      - name: Compute S3 base (handles Origin Path/prefix)
+        run: |
+          S3_BUCKET="${{ secrets.AWS_S3_BUCKET }}"
+          S3_PREFIX="${{ secrets.AWS_S3_PREFIX }}"   # e.g. "prod" if your origin path is /prod; else leave secret empty
+          S3_BASE="s3://$S3_BUCKET"
+          if [ -n "$S3_PREFIX" ]; then S3_BASE="$S3_BASE/$S3_PREFIX"; fi
+          echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
+          echo "S3_PREFIX=$S3_PREFIX" >> $GITHUB_ENV
+          echo "S3_BASE=$S3_BASE" >> $GITHUB_ENV
+          echo "Using S3_BASE=$S3_BASE"
+
+      - name: Fix MIME types + cache headers (no blanket REPLACE)
         shell: bash
         run: |
           set -euo pipefail
-          # Immutable assets
-          aws s3 cp "$S3_BASE/assets/" "$S3_BASE/assets/" \
-            --recursive --metadata-directive REPLACE \
-            --cache-control "public,max-age=31536000,immutable"
-
-          # Per-extension content-types
+          # Per-extension content-types (set BOTH cache-control and content-type in one shot)
           declare -A MAP=(
             ["js"]="application/javascript"
+            ["mjs"]="application/javascript"
+            ["cjs"]="application/javascript"
             ["css"]="text/css"
             ["svg"]="image/svg+xml"
             ["png"]="image/png"
@@ -106,7 +124,7 @@ jobs:
             --content-type "text/html" \
             --cache-control "no-cache"
 
-      - name: Verify bundle Content-Type (S3 with prefix)
+      - name: Verify bundle Content-Type (S3)
         run: |
           JS="$JS_FILE"; CSS="$CSS_FILE"
           if [ -n "$S3_PREFIX" ]; then JS="$S3_PREFIX/$JS"; CSS="$S3_PREFIX/$CSS"; fi
