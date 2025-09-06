@@ -13,7 +13,8 @@ jobs:
       cancel-in-progress: true
     defaults:
       run:
-        working-directory: frontend   # build from your frontend folder
+        working-directory: frontend
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,15 +22,26 @@ jobs:
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install deps (incl dev)
         run: npm ci --include=dev
 
       - name: Build
+        env:
+          # Ensure vite.config.js has: base: "/"
+          VITE_CANON_HOST: ""  # leave blank unless you intentionally canonicalize to bunaroots.com
         run: npm run build
+
+      - name: Sanity check (bundle must NOT reference cloudfront.net)
+        run: |
+          if grep -Riq "cloudfront\.net" dist; then
+            echo "ERROR: Built bundle contains CloudFront hostname. Remove any redirect/canonical code."
+            grep -Rin "cloudfront\.net" dist || true
+            exit 1
+          fi
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
@@ -38,16 +50,28 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Upload assets (cache forever)
+      # Flip `if: ${{ false }}` to true ONCE if you want to nuke the bucket and start fresh.
+      - name: (One-time) Hard clean bucket
+        if: ${{ false }}
+        run: aws s3 rm s3://${{ secrets.S3_BUCKET }}/ --recursive
+
+      # Phase 1: upload everything with correct MIME types by extension
+      - name: Upload all artifacts (preserve types) + delete old
         run: |
-          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET }}/ \
-            --delete \
-            --exclude "index.html" \
+          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET }}/ --delete
+
+      # Phase 2: set correct cache policies
+      - name: Set long cache for hashed assets
+        run: |
+          aws s3 cp s3://${{ secrets.S3_BUCKET }}/assets/ s3://${{ secrets.S3_BUCKET }}/assets/ \
+            --recursive \
+            --metadata-directive REPLACE \
             --cache-control "public, max-age=31536000, immutable"
 
-      - name: Upload index.html (no cache)
+      - name: Ensure index.html is no-store
         run: |
-          aws s3 cp dist/index.html s3://${{ secrets.S3_BUCKET }}/index.html \
+          aws s3 cp s3://${{ secrets.S3_BUCKET }}/index.html s3://${{ secrets.S3_BUCKET }}/index.html \
+            --metadata-directive REPLACE \
             --cache-control "no-store, no-cache, max-age=0, must-revalidate" \
             --content-type "text/html; charset=utf-8"
 
