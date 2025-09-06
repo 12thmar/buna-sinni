@@ -1,0 +1,4 @@
+/* src/styles/globals.css */
+html, body { overflow-x: hidden; }
+img, video { max-width: 100%; height: auto; }
+* { min-width: 0; } /* prevents flex children from forcing horizontal scroll */

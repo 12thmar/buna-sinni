@@ -1,13 +1,12 @@
-export function Logo({ label = "BunaRoots" }) {
+export function Logo({ label = "BunaRoots.com", showText = true, size = "h-12 w-12" }) {
   return (
     <div className="flex items-center gap-2 font-semibold">
       <img
-        src="/images/logo.png"           // file in /public/images/
+        src="/images/logo.png"
         alt={label}
-        className="h-9 w-9 rounded-full object-cover"
-        style={{ display: "inline-block" }} // temporary guard against hidden
+        className={`${size} rounded-full object-cover`}
       />
-      <span className="tracking-tight">{label}</span>
+      {showText && <span className="tracking-tight">{label}</span>}
     </div>
   );
 }
