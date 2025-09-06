@@ -100,54 +100,83 @@ jobs:
           aws s3api head-object --bucket "${{ secrets.AWS_S3_BUCKET }}" --key "$CSS_FILE" \
             --query '{Key:Key,CT:ContentType,Cache:CacheControl}'
 
-      - name: Invalidate CloudFront
+      - name: Invalidate CloudFront (capture ID)
         env:
           DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id "$DISTRIBUTION_ID" \
-            --paths "/*"
-
-      - name: Wait for CloudFront invalidation
-        env:
-          DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-        run: |
-          set -e
-          INV_ID=$(aws cloudfront list-invalidations \
-            --distribution-id "$DISTRIBUTION_ID" \
-            --query 'InvalidationList.Items[0].Id' --output text)
-          aws cloudfront wait invalidation-completed \
-            --distribution-id "$DISTRIBUTION_ID" --id "$INV_ID"
-
-      - name: Edge smoke-test (JS & CSS from index.html)
-        env:
-          DOMAIN: www.bunaroots.com   # change if you deploy to a different host
         run: |
           set -euo pipefail
-          echo "Probing https://$DOMAIN/$JS_FILE and $CSS_FILE"
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION_ID" \
+            --paths "/*" \
+            --query 'Invalidation.Id' --output text)
+          echo "INVALIDATION_ID=$INVALIDATION_ID" >> $GITHUB_ENV
+          echo "Created invalidation: $INVALIDATION_ID"
 
-          check() {
-            local path="$1"
-            local expect="$2" # js or css
-            echo "---- HEAD https://$DOMAIN/$path"
+      - name: Wait for CloudFront invalidation (no ListInvalidations)
+        env:
+          DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${INVALIDATION_ID:-}" ]; then
+            echo "::warning::No INVALIDATION_ID available; skipping wait."
+            exit 0
+          fi
+          # This requires only cloudfront:GetInvalidation
+          if ! aws cloudfront wait invalidation-completed \
+                --distribution-id "$DISTRIBUTION_ID" \
+                --id "$INVALIDATION_ID"; then
+            echo "::warning::Wait failed or not permitted. Will rely on edge retries next."
+          fi
+
+      - name: Edge smoke-test (retry until fresh)
+        env:
+          DOMAIN: www.bunaroots.com
+        run: |
+          set -euo pipefail
+          # Derive the paths from the built index.html (we exported these earlier, but re-derive if missing)
+          JS_FILE="${JS_FILE:-$(grep -o 'assets/index-[^"]*\.js' dist/index.html | head -n1)}"
+          CSS_FILE="${CSS_FILE:-$(grep -o 'assets/index-[^"]*\.css' dist/index.html | head -n1)}"
+          echo "Testing https://$DOMAIN/$JS_FILE and $DOMAIN/$CSS_FILE"
+
+          check_one() {
+            local path="$1" expect="$2"
             headers=$(curl -sS -I "https://$DOMAIN/$path" || true)
-            echo "$headers"
             status=$(echo "$headers" | awk '/^HTTP/{print $2}' | tail -1)
             ct=$(echo "$headers" | awk -F': ' 'tolower($1)=="content-type"{print tolower($2)}' | tr -d '\r')
-            [ "$status" = "200" ] || { echo "::error::Edge returned $status for $path"; exit 1; }
-            if [ "$expect" = "js" ]; then
-              [[ "$ct" == application/javascript* || "$ct" == text/javascript* ]] || { echo "::error::Wrong Content-Type for $path: $ct"; exit 1; }
-            else
-              [[ "$ct" == text/css* ]] || { echo "::error::Wrong Content-Type for $path: $ct"; exit 1; }
+            body_head=$(curl -sS "https://$DOMAIN/$path" | head -c 120 || true)
+
+            if [ "$status" != "200" ]; then
+              echo "STATUS=$status for $path"
+              return 1
             fi
-            body_head=$(curl -sS "https://$DOMAIN/$path" | head -c 120)
+            if [ "$expect" = "js" ] && [[ "$ct" != application/javascript* && "$ct" != text/javascript* ]]; then
+              echo "Wrong CT ($ct) for $path"
+              return 1
+            fi
+            if [ "$expect" = "css" ] && [[ "$ct" != text/css* ]]; then
+              echo "Wrong CT ($ct) for $path"
+              return 1
+            fi
             if [[ "$body_head" == "<!DOCTYPE html>"* || "$body_head" == "<html"* ]]; then
-              echo "::error::Got HTML for $path (likely SPA rewrite or missing object)."
-              echo "$body_head"
-              exit 1
+              echo "Got HTML for $path (likely stale edge or missing object)"
+              return 1
             fi
-            echo "OK: $path"
+            return 0
           }
 
-          check "$JS_FILE" js
-          check "$CSS_FILE" css
+          # Retry up to ~2 minutes for edges to pick up fresh objects
+          for i in $(seq 1 12); do
+            echo "Attempt $i/12 ..."
+            if check_one "$JS_FILE" js && check_one "$CSS_FILE" css; then
+              echo "Edge OK"
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "::error::Edge still serving wrong content after retries."
+          echo "Debug JS HEAD:"
+          curl -I "https://$DOMAIN/$JS_FILE" || true
+          echo "Debug CSS HEAD:"
+          curl -I "https://$DOMAIN/$CSS_FILE" || true
+          exit 1
