@@ -42,7 +42,7 @@ jobs:
             grep -Rin "cloudfront\.net" dist || true
             exit 1
           fi
-`
+          
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
