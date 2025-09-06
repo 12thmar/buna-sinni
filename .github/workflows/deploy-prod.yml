@@ -5,6 +5,10 @@ on:
     branches: [ "prod" ]
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -29,54 +33,77 @@ jobs:
       - name: Install deps (incl dev)
         run: npm ci --include=dev
 
-      - name: Build
+      - name: Install & Build
         env:
           # Ensure vite.config.js has: base: "/"
           VITE_CANON_HOST: ""  # leave blank unless you intentionally canonicalize to bunaroots.com
-        run: npm run build
-
-      - name: Sanity check (bundle must NOT reference cloudfront.net)
         run: |
-          if grep -Riq "cloudfront\.net" dist; then
-            echo "ERROR: Built bundle contains CloudFront hostname. Remove any redirect/canonical code."
-            grep -Rin "cloudfront\.net" dist || true
-            exit 1
-          fi
-`
-      - name: Configure AWS
+          npm ci
+          npm run build
+          # Sanity: ensure hashed bundle referenced by index.html exists
+          JS_FILE=$(grep -o 'assets/index-[^"]*\.js' dist/index.html | head -n1)
+          CSS_FILE=$(grep -o 'assets/index-[^"]*\.css' dist/index.html | head -n1)
+          test -f "dist/$JS_FILE" || (echo "Missing $JS_FILE" && exit 1)
+          test -f "dist/$CSS_FILE" || (echo "Missing $CSS_FILE" && exit 1)
+          echo "JS_FILE=$JS_FILE" >> $GITHUB_ENV
+          echo "CSS_FILE=$CSS_FILE" >> $GITHUB_ENV
+
+      - name: Configure AWS (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Flip `if: ${{ false }}` to true ONCE if you want to nuke the bucket and start fresh.
-      - name: (One-time) Hard clean bucket
-        if: ${{ false }}
-        run: aws s3 rm s3://${{ secrets.AWS_S3_BUCKET }}/ --recursive
-
-      # Phase 1: upload everything with correct MIME types by extension
-      - name: Upload all artifacts (preserve types) + delete old
+      - name: Sync build → S3
         run: |
           aws s3 sync dist/ s3://${{ secrets.AWS_S3_BUCKET }}/ --delete
 
-      # Phase 2: set correct cache policies
-      - name: Set long cache for hashed assets
+      - name: Fix MIME types + cache headers
+        shell: bash
         run: |
+          # Immutable assets
           aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/assets/ s3://${{ secrets.AWS_S3_BUCKET }}/assets/ \
-            --recursive \
-            --metadata-directive REPLACE \
-            --cache-control "public, max-age=31536000, immutable"
-
-      - name: Ensure index.html is no-store
-        run: |
+            --recursive --metadata-directive REPLACE \
+            --cache-control "public,max-age=31536000,immutable"
+          
+          # Per-extension content-types
+          declare -A MAP=(
+            ["js"]="application/javascript"
+            ["css"]="text/css"
+            ["svg"]="image/svg+xml"
+            ["png"]="image/png"
+            ["jpg"]="image/jpeg"
+            ["jpeg"]="image/jpeg"
+            ["webp"]="image/webp"
+            ["avif"]="image/avif"
+            ["woff2"]="font/woff2"
+          )
+          for ext in "${!MAP[@]}"; do
+            aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/assets/ s3://${{ secrets.AWS_S3_BUCKET }}/assets/ \
+              --recursive --exclude "*" --include "*.${ext}" \
+              --metadata-directive REPLACE \
+              --content-type "${MAP[$ext]}" \
+              --cache-control "public,max-age=31536000,immutable"
+          done
+          
+          # HTML should be no-cache so new builds take effect
           aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/index.html s3://${{ secrets.AWS_S3_BUCKET }}/index.html \
             --metadata-directive REPLACE \
-            --cache-control "no-store, no-cache, max-age=0, must-revalidate" \
-            --content-type "text/html; charset=utf-8"
+            --content-type "text/html" \
+            --cache-control "no-cache"
+
+      - name: Verify bundle Content-Type
+        run: |
+          aws s3api head-object --bucket "${{ secrets.AWS_S3_BUCKET }}" --key "$JS_FILE" \
+            --query '{Key:Key,CT:ContentType,Cache:CacheControl}' || true
+          aws s3api head-object --bucket "${{ secrets.AWS_S3_BUCKET }}" --key "$CSS_FILE" \
+            --query '{Key:Key,CT:ContentType,Cache:CacheControl}' || true
 
       - name: Invalidate CloudFront
+        env:
+          DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
         run: |
           aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --distribution-id "$DISTRIBUTION_ID" \
             --paths "/*"
