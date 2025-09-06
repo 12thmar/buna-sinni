@@ -47,7 +47,7 @@ jobs:
           echo "CSS_FILE=$CSS_FILE" >> $GITHUB_ENV
           echo "Bundle refs → $JS_FILE | $CSS_FILE"
 
-            - name: Configure AWS
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
