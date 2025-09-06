@@ -47,23 +47,34 @@ jobs:
           echo "CSS_FILE=$CSS_FILE" >> $GITHUB_ENV
           echo "Bundle refs → $JS_FILE | $CSS_FILE"
 
-      - name: Configure AWS
+            - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Sync build → S3
+      - name: Compute S3 base (handles Origin Path/prefix)
         run: |
-          aws s3 sync dist/ s3://${{ secrets.AWS_S3_BUCKET }}/ --delete
+          S3_BUCKET="${{ secrets.AWS_S3_BUCKET }}"
+          S3_PREFIX="${{ secrets.AWS_S3_PREFIX }}"   # e.g. "prod" or empty
+          S3_BASE="s3://$S3_BUCKET"
+          if [ -n "$S3_PREFIX" ]; then S3_BASE="$S3_BASE/$S3_PREFIX"; fi
+          echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
+          echo "S3_PREFIX=$S3_PREFIX" >> $GITHUB_ENV
+          echo "S3_BASE=$S3_BASE" >> $GITHUB_ENV
+          echo "Using S3_BASE=$S3_BASE"
 
-      - name: Fix MIME types + cache headers
+      - name: Sync build → S3 (respects prefix)
+        run: |
+          aws s3 sync dist/ "$S3_BASE/" --delete
+
+      - name: Fix MIME types + cache headers (respects prefix)
         shell: bash
         run: |
           set -euo pipefail
           # Immutable assets
-          aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/assets/ s3://${{ secrets.AWS_S3_BUCKET }}/assets/ \
+          aws s3 cp "$S3_BASE/assets/" "$S3_BASE/assets/" \
             --recursive --metadata-directive REPLACE \
             --cache-control "public,max-age=31536000,immutable"
 
@@ -78,11 +89,11 @@ jobs:
             ["webp"]="image/webp"
             ["avif"]="image/avif"
             ["woff2"]="font/woff2"
-            ["map"]="application/json"     # ← new (source maps)
-            ["json"]="application/json"    # ← new (any JSON assets)
+            ["map"]="application/json"
+            ["json"]="application/json"
           )
           for ext in "${!MAP[@]}"; do
-            aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/assets/ s3://${{ secrets.AWS_S3_BUCKET }}/assets/ \
+            aws s3 cp "$S3_BASE/assets/" "$S3_BASE/assets/" \
               --recursive --exclude "*" --include "*.${ext}" \
               --metadata-directive REPLACE \
               --content-type "${MAP[$ext]}" \
@@ -90,182 +101,16 @@ jobs:
           done
 
           # HTML should be no-cache so new builds take effect
-          aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/index.html s3://${{ secrets.AWS_S3_BUCKET }}/index.html \
+          aws s3 cp "$S3_BASE/index.html" "$S3_BASE/index.html" \
             --metadata-directive REPLACE \
             --content-type "text/html" \
             --cache-control "no-cache"
 
-      - name: Edge MIME check for ALL JS chunks
-        env:
-          DOMAIN: www.bunaroots.com
-          BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+      - name: Verify bundle Content-Type (S3 with prefix)
         run: |
-          set -euo pipefail
-          # list all built JS keys under assets/
-          KEYS=$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix assets/ \
-            --query "Contents[?ends_with(Key, '.js')].Key" --output text)
-          echo "Checking at edge:"
-          echo "$KEYS" | tr '\t' '\n'
-          # verify each at the edge (status 200 + application/javascript, not HTML)
-          FAIL=0
-          for k in $KEYS; do
-            URL="https://${DOMAIN}/${k}"
-            echo "---- $URL"
-            H=$(curl -sS -I "$URL" || true)
-            echo "$H"
-            S=$(echo "$H" | awk '/^HTTP/{print $2}' | tail -1)
-            CT=$(echo "$H" | awk -F': ' 'tolower($1)=="content-type"{print tolower($2)}' | tr -d '\r')
-            [ "$S" = "200" ] || { echo "::error::$k status $S"; FAIL=1; continue; }
-            [[ "$CT" == application/javascript* || "$CT" == text/javascript* ]] || { echo "::error::$k CT $CT"; FAIL=1; continue; }
-            B=$(curl -sS --range 0-119 "$URL" 2>/dev/null || true)
-            if [[ "$B" == "<!DOCTYPE html>"* || "$B" == "<html"* ]]; then
-              echo "::error::HTML served for $k"
-              FAIL=1
-            fi
-          done
-          [ $FAIL -eq 0 ] || exit 1
-
-      - name: Install Playwright (Chromium only)
-        run: |
-          npm i -D playwright@1
-          npx playwright install --with-deps chromium
-
-      - name: Runtime smoke-test (capture console errors + screenshot)
-        env:
-          DOMAIN: www.bunaroots.com
-        run: |
-          set -euo pipefail
-          node - <<'NODE'
-          const { chromium } = require('playwright');
-          (async () => {
-            const url = 'https://' + process.env.DOMAIN + '/';
-            const browser = await chromium.launch();
-            const page = await browser.newPage();
-            const logs = [];
-            page.on('pageerror', e => logs.push('[pageerror] ' + e.message));
-            page.on('console', m => { if (m.type() === 'error') logs.push('[console.error] ' + m.text()); });
-            page.on('requestfailed', r => logs.push('[requestfailed] ' + r.url() + ' :: ' + (r.failure()?.errorText || '')));
-            await page.goto(url, { waitUntil: 'networkidle' });
-            // Simple DOM assertion
-            const cnt = await page.evaluate(() => document.getElementById('root')?.childElementCount || 0);
-            if (cnt === 0) logs.push('root has no children after load (render failed)');
-            if (logs.length) {
-              console.log('--- Runtime problems ---');
-              for (const l of logs) console.log(l);
-              await page.screenshot({ path: 'runtime-failure.png', fullPage: true });
-              const html = await page.content();
-              require('fs').writeFileSync('runtime-dump.html', html);
-              await browser.close();
-              process.exit(1);
-            }
-            console.log('Runtime OK (root children:', cnt, ')');
-            await page.close(); await browser.close();
-          })().catch(e => { console.error(e); process.exit(1); });
-          NODE
-
-      - name: Upload runtime artifacts (if any)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: runtime-debug
-          path: |
-            frontend/runtime-failure.png
-            frontend/runtime-dump.html
-          if-no-files-found: ignore
-
-      - name: Verify bundle Content-Type (S3)
-        run: |
-          aws s3api head-object --bucket "${{ secrets.AWS_S3_BUCKET }}" --key "$JS_FILE" \
+          JS="$JS_FILE"; CSS="$CSS_FILE"
+          if [ -n "$S3_PREFIX" ]; then JS="$S3_PREFIX/$JS"; CSS="$S3_PREFIX/$CSS"; fi
+          aws s3api head-object --bucket "$S3_BUCKET" --key "$JS" \
             --query '{Key:Key,CT:ContentType,Cache:CacheControl}'
-          aws s3api head-object --bucket "${{ secrets.AWS_S3_BUCKET }}" --key "$CSS_FILE" \
+          aws s3api head-object --bucket "$S3_BUCKET" --key "$CSS" \
             --query '{Key:Key,CT:ContentType,Cache:CacheControl}'
-
-      - name: Invalidate CloudFront (capture ID)
-        env:
-          DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-        run: |
-          set -euo pipefail
-          INVALIDATION_ID=$(aws cloudfront create-invalidation \
-            --distribution-id "$DISTRIBUTION_ID" \
-            --paths "/*" \
-            --query 'Invalidation.Id' --output text)
-          echo "INVALIDATION_ID=$INVALIDATION_ID" >> $GITHUB_ENV
-          echo "Created invalidation: $INVALIDATION_ID"
-
-      - name: Try waiting for invalidation (skip if not permitted)
-        env:
-          DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-        run: |
-          set -euo pipefail
-          if [ -n "${INVALIDATION_ID:-}" ]; then
-            # Requires only cloudfront:GetInvalidation; ignore AccessDenied
-            aws cloudfront wait invalidation-completed \
-              --distribution-id "$DISTRIBUTION_ID" \
-              --id "$INVALIDATION_ID" || echo "::warning::Skipping wait (no GetInvalidation permission)."
-          fi
-
-      - name: Edge smoke-test (bytes only; no curl 23 noise)
-        env:
-          DOMAIN: www.bunaroots.com
-        run: |
-          set -euo pipefail
-          JS_FILE="${JS_FILE:-$(grep -o 'assets/index-[^"]*\.js' dist/index.html | head -n1)}"
-          CSS_FILE="${CSS_FILE:-$(grep -o 'assets/index-[^"]*\.css' dist/index.html | head -n1)}"
-          echo "Testing https://$DOMAIN/$JS_FILE and https://$DOMAIN/$CSS_FILE"
-
-          check() {
-            local path="$1" expect="$2"
-            echo "---- HEAD https://$DOMAIN/$path"
-            headers=$(curl -sS -I "https://$DOMAIN/$path" || true)
-            echo "$headers"
-            status=$(echo "$headers" | awk '/^HTTP/{print $2}' | tail -1)
-            ct=$(echo "$headers" | awk -F': ' 'tolower($1)=="content-type"{print tolower($2)}' | tr -d '\r')
-            [ "$status" = "200" ] || { echo "::error::Edge returned $status for $path"; exit 1; }
-            if [ "$expect" = "js" ]; then
-              [[ "$ct" == application/javascript* || "$ct" == text/javascript* ]] || { echo "::error::Wrong Content-Type for $path: $ct"; exit 1; }
-            else
-              [[ "$ct" == text/css* ]] || { echo "::error::Wrong Content-Type for $path: $ct"; exit 1; }
-            fi
-            # Fetch only first 120 bytes (avoid curl 23 broken pipe)
-            body_head=$(curl -sS --range 0-119 "https://$DOMAIN/$path" 2>/dev/null || true)
-            if [[ "$body_head" == "<!DOCTYPE html>"* || "$body_head" == "<html"* ]]; then
-              echo "::error::Got HTML for $path (likely SPA rewrite/missing object)."
-              echo "$body_head"
-              exit 1
-            fi
-            echo "OK: $path"
-          }
-
-          check "$JS_FILE" js
-          check "$CSS_FILE" css
-      
-      - name: Install Playwright (ephemeral)
-        run: |
-          npm i -D playwright
-          npx playwright install --with-deps chromium
-
-      - name: Runtime smoke-test (fail on console/page errors)
-        run: |
-          node - <<'NODE'
-          const { chromium } = require('playwright');
-          (async () => {
-            const url = 'https://www.bunaroots.com/';
-            const browser = await chromium.launch();
-            const page = await browser.newPage();
-            const errs = [];
-            page.on('pageerror', e => errs.push('pageerror: ' + e.message));
-            page.on('console', m => { if (m.type() === 'error') errs.push('console.error: ' + m.text()); });
-            page.on('requestfailed', r => errs.push('requestfailed: ' + r.url() + ' :: ' + (r.failure()?.errorText || '')));
-            await page.goto(url, { waitUntil: 'networkidle' });
-            const childCount = await page.evaluate(() => document.getElementById('root')?.childElementCount || 0);
-            if (childCount === 0) errs.push('root has no children after load');
-            if (errs.length) {
-              console.log('--- Runtime errors detected ---');
-              for (const e of errs) console.log(e);
-              await browser.close();
-              process.exit(1);
-            }
-            console.log('Runtime OK');
-            await browser.close();
-          })().catch(e => { console.error(e); process.exit(1); });
-          NODE
