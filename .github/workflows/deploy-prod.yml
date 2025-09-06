@@ -95,6 +95,84 @@ jobs:
             --content-type "text/html" \
             --cache-control "no-cache"
 
+      - name: Edge MIME check for ALL JS chunks
+        env:
+          DOMAIN: www.bunaroots.com
+          BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+        run: |
+          set -euo pipefail
+          # list all built JS keys under assets/
+          KEYS=$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix assets/ \
+            --query "Contents[?ends_with(Key, '.js')].Key" --output text)
+          echo "Checking at edge:"
+          echo "$KEYS" | tr '\t' '\n'
+          # verify each at the edge (status 200 + application/javascript, not HTML)
+          FAIL=0
+          for k in $KEYS; do
+            URL="https://${DOMAIN}/${k}"
+            echo "---- $URL"
+            H=$(curl -sS -I "$URL" || true)
+            echo "$H"
+            S=$(echo "$H" | awk '/^HTTP/{print $2}' | tail -1)
+            CT=$(echo "$H" | awk -F': ' 'tolower($1)=="content-type"{print tolower($2)}' | tr -d '\r')
+            [ "$S" = "200" ] || { echo "::error::$k status $S"; FAIL=1; continue; }
+            [[ "$CT" == application/javascript* || "$CT" == text/javascript* ]] || { echo "::error::$k CT $CT"; FAIL=1; continue; }
+            B=$(curl -sS --range 0-119 "$URL" 2>/dev/null || true)
+            if [[ "$B" == "<!DOCTYPE html>"* || "$B" == "<html"* ]]; then
+              echo "::error::HTML served for $k"
+              FAIL=1
+            fi
+          done
+          [ $FAIL -eq 0 ] || exit 1
+
+      - name: Install Playwright (Chromium only)
+        run: |
+          npm i -D playwright@1
+          npx playwright install --with-deps chromium
+
+      - name: Runtime smoke-test (capture console errors + screenshot)
+        env:
+          DOMAIN: www.bunaroots.com
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const url = 'https://' + process.env.DOMAIN + '/';
+            const browser = await chromium.launch();
+            const page = await browser.newPage();
+            const logs = [];
+            page.on('pageerror', e => logs.push('[pageerror] ' + e.message));
+            page.on('console', m => { if (m.type() === 'error') logs.push('[console.error] ' + m.text()); });
+            page.on('requestfailed', r => logs.push('[requestfailed] ' + r.url() + ' :: ' + (r.failure()?.errorText || '')));
+            await page.goto(url, { waitUntil: 'networkidle' });
+            // Simple DOM assertion
+            const cnt = await page.evaluate(() => document.getElementById('root')?.childElementCount || 0);
+            if (cnt === 0) logs.push('root has no children after load (render failed)');
+            if (logs.length) {
+              console.log('--- Runtime problems ---');
+              for (const l of logs) console.log(l);
+              await page.screenshot({ path: 'runtime-failure.png', fullPage: true });
+              const html = await page.content();
+              require('fs').writeFileSync('runtime-dump.html', html);
+              await browser.close();
+              process.exit(1);
+            }
+            console.log('Runtime OK (root children:', cnt, ')');
+            await page.close(); await browser.close();
+          })().catch(e => { console.error(e); process.exit(1); });
+          NODE
+
+      - name: Upload runtime artifacts (if any)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-debug
+          path: |
+            frontend/runtime-failure.png
+            frontend/runtime-dump.html
+          if-no-files-found: ignore
+
       - name: Verify bundle Content-Type (S3)
         run: |
           aws s3api head-object --bucket "${{ secrets.AWS_S3_BUCKET }}" --key "$JS_FILE" \
