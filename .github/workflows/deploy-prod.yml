@@ -58,12 +58,11 @@ jobs:
       # Phase 1: upload everything with correct MIME types by extension
       - name: Upload all artifacts (preserve types) + delete old
         run: |
-          aws s3 sync dist/ s3://${{ secrets.AWS_S3_BUCKET }}/ --delete
+          aws s3 sync dist/ s3://${{ secrets.AWS_S3_BUCKET}}/ --delete
 
       # Phase 2: set correct cache policies
       - name: Set long cache for hashed assets
         run: |
-
           aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/assets/ s3://${{ secrets.AWS_S3_BUCKET }}/assets/ \
             --recursive \
             --metadata-directive REPLACE \
