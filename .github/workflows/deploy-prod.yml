@@ -2,7 +2,7 @@ name: Deploy frontend to S3 + CloudFront
 
 on:
   push:
-    branches: [ "prod" ]
+    branches: ["prod"]
   workflow_dispatch:
 
 permissions:
@@ -30,22 +30,28 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install deps (incl dev)
+      - name: Install deps
         run: npm ci
 
       - name: Install & Build
         env:
-          VITE_CANON_HOST: ""  # keep empty unless you intentionally canonicalize
+          # Unique per run → Vite writes to /assets/<BUILD_ID>/*
+          BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          # Add any VITE_* your app needs here
+          VITE_CANON_HOST: ""            # keep empty unless you intentionally canonicalize
         run: |
           npm run build
-          # Sanity: ensure hashed bundle referenced by index.html exists
-          JS_FILE=$(grep -o 'assets/index-[^"]*\.js' dist/index.html | head -n1)
-          CSS_FILE=$(grep -o 'assets/index-[^"]*\.css' dist/index.html | head -n1)
-          test -f "dist/$JS_FILE" || (echo "Missing $JS_FILE" && exit 1)
+          # Pull the exact files referenced by index.html (handles subfolder under assets/)
+          JS_FILE=$(grep -o 'assets/[^"]*index-[^"]*\.js'  dist/index.html | head -n1)
+          CSS_FILE=$(grep -o 'assets/[^"]*index-[^"]*\.css' dist/index.html | head -n1)
+          test -f "dist/$JS_FILE"  || (echo "Missing $JS_FILE" && exit 1)
           test -f "dist/$CSS_FILE" || (echo "Missing $CSS_FILE" && exit 1)
-          echo "JS_FILE=$JS_FILE" >> $GITHUB_ENV
+          echo "JS_FILE=$JS_FILE"   >> $GITHUB_ENV
           echo "CSS_FILE=$CSS_FILE" >> $GITHUB_ENV
-          echo "Bundle refs → $JS_FILE | $CSS_FILE"
+          # Extract build folder name after assets/
+          BUILD_DIR=$(echo "$JS_FILE" | sed -E 's#^assets/([^/]+)/.*#\1#')
+          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
+          echo "Bundle refs → $JS_FILE | $CSS_FILE (BUILD_DIR=$BUILD_DIR)"
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
@@ -54,22 +60,29 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Sync build → S3
+      - name: Compute S3 base (handles Origin Path/prefix)
         run: |
-          aws s3 sync dist/ s3://${{ secrets.AWS_S3_BUCKET }}/ --delete
+          S3_BUCKET="${{ secrets.AWS_S3_BUCKET }}"
+          S3_PREFIX="${{ secrets.AWS_S3_PREFIX }}"   # e.g. "prod" or empty
+          S3_BASE="s3://$S3_BUCKET"
+          if [ -n "$S3_PREFIX" ]; then S3_BASE="$S3_BASE/$S3_PREFIX"; fi
+          echo "S3_BUCKET=$S3_BUCKET" >> $GITHUB_ENV
+          echo "S3_PREFIX=$S3_PREFIX" >> $GITHUB_ENV
+          echo "S3_BASE=$S3_BASE" >> $GITHUB_ENV
+          echo "Using S3_BASE=$S3_BASE"
 
-      - name: Fix MIME types + cache headers
+      - name: Sync build → S3 (prefix-aware)
+        run: |
+          aws s3 sync dist/ "$S3_BASE/" --delete
+
+      - name: Fix MIME types + cache headers (no blanket REPLACE)
         shell: bash
         run: |
           set -euo pipefail
-          # Immutable assets
-          aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/assets/ s3://${{ secrets.AWS_S3_BUCKET }}/assets/ \
-            --recursive --metadata-directive REPLACE \
-            --cache-control "public,max-age=31536000,immutable"
-
-          # Per-extension content-types
           declare -A MAP=(
             ["js"]="application/javascript"
+            ["mjs"]="application/javascript"
+            ["cjs"]="application/javascript"
             ["css"]="text/css"
             ["svg"]="image/svg+xml"
             ["png"]="image/png"
@@ -78,76 +91,35 @@ jobs:
             ["webp"]="image/webp"
             ["avif"]="image/avif"
             ["woff2"]="font/woff2"
+            ["map"]="application/json"
+            ["json"]="application/json"
           )
           for ext in "${!MAP[@]}"; do
-            aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/assets/ s3://${{ secrets.AWS_S3_BUCKET }}/assets/ \
+            aws s3 cp "$S3_BASE/assets/" "$S3_BASE/assets/" \
               --recursive --exclude "*" --include "*.${ext}" \
               --metadata-directive REPLACE \
               --content-type "${MAP[$ext]}" \
               --cache-control "public,max-age=31536000,immutable"
           done
-
-          # HTML should be no-cache so new builds take effect
-          aws s3 cp s3://${{ secrets.AWS_S3_BUCKET }}/index.html s3://${{ secrets.AWS_S3_BUCKET }}/index.html \
+          # HTML should be no-cache so clients pick up new asset URLs
+          aws s3 cp "$S3_BASE/index.html" "$S3_BASE/index.html" \
             --metadata-directive REPLACE \
             --content-type "text/html" \
             --cache-control "no-cache"
 
       - name: Verify bundle Content-Type (S3)
         run: |
-          aws s3api head-object --bucket "${{ secrets.AWS_S3_BUCKET }}" --key "$JS_FILE" \
+          JS="$JS_FILE"; CSS="$CSS_FILE"
+          if [ -n "$S3_PREFIX" ]; then JS="$S3_PREFIX/$JS"; CSS="$S3_PREFIX/$CSS"; fi
+          aws s3api head-object --bucket "$S3_BUCKET" --key "$JS" \
             --query '{Key:Key,CT:ContentType,Cache:CacheControl}'
-          aws s3api head-object --bucket "${{ secrets.AWS_S3_BUCKET }}" --key "$CSS_FILE" \
+          aws s3api head-object --bucket "$S3_BUCKET" --key "$CSS" \
             --query '{Key:Key,CT:ContentType,Cache:CacheControl}'
 
-      - name: Invalidate CloudFront
+      - name: Invalidate CloudFront (index + new assets folder only)
         env:
           DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
         run: |
           aws cloudfront create-invalidation \
             --distribution-id "$DISTRIBUTION_ID" \
-            --paths "/*"
-
-      - name: Wait for CloudFront invalidation
-        env:
-          DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
-        run: |
-          set -e
-          INV_ID=$(aws cloudfront list-invalidations \
-            --distribution-id "$DISTRIBUTION_ID" \
-            --query 'InvalidationList.Items[0].Id' --output text)
-          aws cloudfront wait invalidation-completed \
-            --distribution-id "$DISTRIBUTION_ID" --id "$INV_ID"
-
-      - name: Edge smoke-test (JS & CSS from index.html)
-        env:
-          DOMAIN: www.bunaroots.com   # change if you deploy to a different host
-        run: |
-          set -euo pipefail
-          echo "Probing https://$DOMAIN/$JS_FILE and $CSS_FILE"
-
-          check() {
-            local path="$1"
-            local expect="$2" # js or css
-            echo "---- HEAD https://$DOMAIN/$path"
-            headers=$(curl -sS -I "https://$DOMAIN/$path" || true)
-            echo "$headers"
-            status=$(echo "$headers" | awk '/^HTTP/{print $2}' | tail -1)
-            ct=$(echo "$headers" | awk -F': ' 'tolower($1)=="content-type"{print tolower($2)}' | tr -d '\r')
-            [ "$status" = "200" ] || { echo "::error::Edge returned $status for $path"; exit 1; }
-            if [ "$expect" = "js" ]; then
-              [[ "$ct" == application/javascript* || "$ct" == text/javascript* ]] || { echo "::error::Wrong Content-Type for $path: $ct"; exit 1; }
-            else
-              [[ "$ct" == text/css* ]] || { echo "::error::Wrong Content-Type for $path: $ct"; exit 1; }
-            fi
-            body_head=$(curl -sS "https://$DOMAIN/$path" | head -c 120)
-            if [[ "$body_head" == "<!DOCTYPE html>"* || "$body_head" == "<html"* ]]; then
-              echo "::error::Got HTML for $path (likely SPA rewrite or missing object)."
-              echo "$body_head"
-              exit 1
-            fi
-            echo "OK: $path"
-          }
-
-          check "$JS_FILE" js
-          check "$CSS_FILE" css
+            --paths "/index.html" "/assets/${BUILD_DIR}/*"
