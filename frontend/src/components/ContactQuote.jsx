@@ -5,8 +5,8 @@ export function ContactQuote() {
         Get in touch. Fill out our <a className="underline underline-offset-4" href="#contact">contact form</a> and we’ll get back to you shortly.
       </p>
       <blockquote className="mt-8 italic text-slate-700">
-        “The aroma and quality were unmatched. As a roaster, sourcing from BunaRoots has elevated my offering.”
-        <footer className="mt-2 text-sm">— James M., Roaster in California</footer>
+        “BunaRoots showcases our Ethiopian coffee at its highest expression. From our farms to your cup, every step is handled with excellence.”
+        <footer className="mt-2 text-sm">— Hussian A., Producer Partner in Ethiopia</footer>
       </blockquote>
     </section>
   );

@@ -4,9 +4,9 @@ export default function Footer() {
       {/* Quote */}
       <div className="max-w-6xl mx-auto px-4 pt-10">
         <blockquote className="mx-auto max-w-4xl text-center text-neutral-600 italic text-base md:text-lg">
-          “The aroma and quality were unmatched. As a roaster, sourcing from BunaRoots has elevated my offering.”
+          “BunaRoots showcases our Ethiopian coffee at its highest expression. From our farms to your cup, every step is handled with excellence.”
           <span className="not-italic font-medium text-neutral-700">
-            {" "}— James M., Roaster in California
+            {" "}— Hussain A., Producer Partner in Ethiopia
           </span>
         </blockquote>
       </div>
@@ -19,7 +19,7 @@ export default function Footer() {
             {["Home","Testimonials","Sourcing","Newsletter","Products","Contact Us"].map(i => (
               <a
                 key={i}
-                href="#"
+                href={i === "Contact Us" ? "/contact" : "#"}
                 className="text-sm text-neutral-700 whitespace-nowrap hover:text-[var(--coffee)] transition"
               >
                 {i}

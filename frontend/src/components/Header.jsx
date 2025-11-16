@@ -1,8 +1,13 @@
 // src/components/Header.jsx
 import { useState } from "react";
+import { Link, NavLink } from "react-router-dom";
 
 export default function Header() {
   const [open, setOpen] = useState(false);
+
+  const linkClass = "hover:opacity-80";
+  const btnClass =
+    "rounded-full px-4 py-2 text-sm ring-1 ring-black/10 hover:bg-black hover:text-white";
 
   return (
     <header className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b">
@@ -14,10 +19,10 @@ export default function Header() {
       {/* Main row */}
       <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
         {/* Brand */}
-        <a href="/" className="flex min-w-0 items-center gap-2">
+        <Link to="/" className="flex min-w-0 items-center gap-2">
           <img src="/images/logo.webp" alt="" className="h-8 w-8 rounded-full object-cover" />
           <span className="truncate text-base font-semibold">BunaRoots</span>
-        </a>
+        </Link>
 
         {/* Search (takes full width on mobile) */}
         <form className="flex-1 md:flex-none">
@@ -32,17 +37,16 @@ export default function Header() {
 
         {/* Desktop links */}
         <nav className="hidden md:flex items-center gap-5">
-          <a href="/testimonials" className="hover:opacity-80">Testimonials</a>
-          <a href="/sourcing" className="hover:opacity-80">Sourcing</a>
-          <a href="/newsletter" className="hover:opacity-80">Newsletter</a>
-          <a href="/products" className="hover:opacity-80">Products</a>
-          <a href="/contact" className="hover:opacity-80">Contact</a>
-          <a
-            href="/shop"
-            className="rounded-full px-4 py-2 text-sm ring-1 ring-black/10 hover:bg-black hover:text-white"
-          >
-            Shop
-          </a>
+          {/* Keep these as plain <a> until you add routes */}
+          <a href="/#" className={linkClass}>Testimonials</a>
+          <a href="/#" className={linkClass}>Sourcing</a>
+          <a href="/#" className={linkClass}>Newsletter</a>
+          <a href="/#" className={linkClass}>Products</a>
+
+          {/* This one is a client route */}
+          <NavLink to="/contact" className={linkClass}>Contact</NavLink>
+
+          <a href="/#" className={btnClass}>Shop</a>
         </nav>
 
         {/* Mobile toggle */}
@@ -68,10 +72,12 @@ export default function Header() {
             <li><a href="/sourcing">Sourcing</a></li>
             <li><a href="/newsletter">Newsletter</a></li>
             <li><a href="/products">Products</a></li>
-            <li><a href="/contact">Contact</a></li>
+            {/* Client route here */}
+            <li><NavLink to="/contact" onClick={() => setOpen(false)}>Contact</NavLink></li>
             <li>
-              <a className="mt-2 inline-block rounded-full px-4 py-2 text-sm ring-1 ring-black/10"
-                 href="/shop">Shop</a>
+              <a className="mt-2 inline-block rounded-full px-4 py-2 text-sm ring-1 ring-black/10" href="/shop">
+                Shop
+              </a>
             </li>
           </ul>
         </div>
