@@ -1,0 +1,17 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      target: dev           # 👈 use the dev stage
+    container_name: buna-sinni-dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules   # so node_modules isn't overwritten
+    networks:
+      - app-net
+
+networks:
+  app-net:
+    driver: bridge
