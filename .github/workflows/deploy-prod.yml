@@ -38,7 +38,7 @@ jobs:
           VITE_CANON_HOST: ""  # keep empty unless you intentionally canonicalize
         run: |
           npm run build
-          # Sanity check: ensure hashed bundle referenced by index.html exits
+          # Sanity: ensure hashed bundle referenced by index.html exits
           JS_FILE=$(grep -o 'assets/index-[^"]*\.js' dist/index.html | head -n1)
           CSS_FILE=$(grep -o 'assets/index-[^"]*\.css' dist/index.html | head -n1)
           test -f "dist/$JS_FILE" || (echo "Missing $JS_FILE" && exit 1)
