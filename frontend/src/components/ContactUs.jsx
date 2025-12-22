@@ -18,10 +18,6 @@ export default function ContactUs() {
     const form = e.currentTarget;                // 👈 capture the form
     const data = Object.fromEntries(new FormData(form));
 
-    console.log("Environment VARS:", import.meta.env);
-    console.log("Contact form payload:", data);
-    console.log("API_BASE:", API_BASE);
-
     try {
         const res = await fetch(`${API_BASE}/api/contact`, {
         method: "POST",
