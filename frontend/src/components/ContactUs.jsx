@@ -4,7 +4,7 @@ import { useState } from "react";
 // base URL comes from Vite env, falls back to localhost if missing
 // public API base URL for the browser
 const API_BASE =
-  (import.meta?.env?.VITE_API_BASE_URL) || "http://localhost:2173/api";
+  (import.meta?.env?.VITE_API_BASE_URL) || "http://localhost:2173";
 
 export default function ContactUs() {
   const [sent, setSent] = useState(false);
@@ -23,7 +23,7 @@ export default function ContactUs() {
     console.log("API_BASE:", API_BASE);
 
     try {
-        const res = await fetch(`${API_BASE}/contact`, {
+        const res = await fetch(`${API_BASE}/api/contact`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
