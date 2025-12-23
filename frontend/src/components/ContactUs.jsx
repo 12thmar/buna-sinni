@@ -1,10 +1,7 @@
 // src/components/ContactUs.jsx
 import { useState } from "react";
 
-// base URL comes from Vite env, falls back to localhost if missing
-// public API base URL for the browser
-const API_BASE =
-  (import.meta?.env?.VITE_API_BASE_URL) || "http://localhost:2173";
+import { API_BASE } from "../config/api";
 
 export default function ContactUs() {
   const [sent, setSent] = useState(false);

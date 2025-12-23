@@ -12,6 +12,10 @@ node_modules/
 *.log
 **/__pycache__/
 
+# Vite / frontend env files
+frontend/.env*
+!frontend/.env.example
+
 # Build artifacts
 dist/
 build/
