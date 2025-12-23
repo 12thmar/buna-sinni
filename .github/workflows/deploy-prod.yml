@@ -144,7 +144,7 @@ jobs:
             else
               [[ "$ct" == text/css* ]] || { echo "::error::Wrong Content-Type for $path: $ct"; exit 1; }
             fi
-            body_head=$(curl -sS "https://$DOMAIN/$path" | head -c 120)
+            body_head=$(curl -sS --range 0-119 "https://$DOMAIN/$path")
             if [[ "$body_head" == "<!DOCTYPE html>"* || "$body_head" == "<html"* ]]; then
               echo "::error::Got HTML for $path (likely SPA rewrite or missing object)."
               echo "$body_head"
