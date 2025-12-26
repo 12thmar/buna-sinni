@@ -1,155 +1,134 @@
 import { useEffect, useRef, useState } from "react";
-import { Search, ShoppingBag, Menu, X } from "lucide-react";
-import { Logo } from "./Logo";
+import { Link, NavLink } from "react-router-dom";
+import { Menu, X, ShoppingBag, Search } from "lucide-react";
+import Logo from "./Logo";
 
-export function NavBar({ links = defaultLinks }) {
+const links = [
+  { label: "Home", href: "/" },
+  { label: "Products", href: "/products" },
+  { label: "About", href: "/about" },
+  { label: "Contact", href: "/contactus" },
+];
+
+export default function NavBar() {
   const [open, setOpen] = useState(false);
-  const panelRef = useRef(null);
+  const menuRef = useRef(null);
   const firstLinkRef = useRef(null);
-  const menuBtnRef = useRef(null);
 
-  // Close on ESC, trap focus, and lock body scroll when open
   useEffect(() => {
-    function onKey(e) {
-      if (e.key === "Escape") setOpen(false);
-      if (e.key === "Tab" && open && panelRef.current) {
-        const focusables = panelRef.current.querySelectorAll(
-          'a, button, input, [tabindex]:not([tabindex="-1"])'
-        );
-        if (!focusables.length) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
+    function handleClickOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setOpen(false);
       }
     }
-    document.addEventListener("keydown", onKey);
-    document.body.style.overflow = open ? "hidden" : "";
-    if (open && firstLinkRef.current) firstLinkRef.current.focus();
-    if (!open && menuBtnRef.current) menuBtnRef.current.focus();
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
-    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (open && firstLinkRef.current) {
+      firstLinkRef.current.focus();
+    }
   }, [open]);
 
   return (
-    <nav className="sticky top-0 z-40 bg-[#e8dfd6]/90 backdrop-blur border-b border-[#d7cfc6] supports-[backdrop-filter]:bg-[#e8dfd6]/70">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 h-16 flex items-center gap-4">
-        {/* Mobile menu button */}
-        <button
-          ref={menuBtnRef}
-          className="lg:hidden p-2 rounded-lg border border-[#d7cfc6] focus:outline-none focus:ring-2 focus:ring-[#7a2d1a]/30"
-          onClick={() => setOpen(true)}
-          aria-label="Open navigation"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          aria-controls="mobile-drawer"
+    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b">
+      <div className="mx-auto max-w-7xl px-4 py-3 flex items-center gap-4">
+        {/* Logo */}
+        <Link to="/" className="shrink-0">
+          <Logo showText={false} size="h-14 w-14" />
+        </Link>
+        {/* Desktop Nav */}
+        <nav
+          className="ml-auto hidden lg:flex items-center gap-6 text-sm"
+          aria-label="Primary"
         >
-          <Menu className="w-6 h-6" />
-        </button>
-
-        {/* Brand */}
-        <a href="/" className="shrink-0">
-          <Logo showText={false} size="h-14 w-14"/>
-        </a>
-
-        {/* Search (hide on small screens) */}
-        <div className="hidden md:flex items-center gap-2 flex-1 max-w-lg mx-auto">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-            <input
-              placeholder="What are you looking for?"
-              className="w-full pl-9 pr-3 py-2 rounded-md border border-[#d7cfc6] bg-white focus:outline-none focus:ring-2 focus:ring-[#7a2d1a]/20"
-              aria-label="Search site"
-            />
-          </div>
-          <button className="rounded-lg bg-[#7a2d1a] text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#7a2d1a]/40">
-            Go
-          </button>
-        </div>
-
-        {/* Desktop nav */}
-        <nav className="ml-auto hidden lg:flex items-center gap-6 text-sm" aria-label="Primary">
           {links.map((l) => (
-            <a key={l.label} className="hover:underline" href={l.href}>
+            <NavLink
+              key={l.label}
+              to={l.href}
+              className={({ isActive }) =>
+                isActive
+                  ? "font-semibold underline"
+                  : "hover:underline"
+              }
+            >
               {l.label}
-            </a>
+            </NavLink>
           ))}
-          <a
-            className="inline-flex items-center gap-2 rounded-lg bg-[#7a2d1a] text-white px-3 py-2 shadow focus:outline-none focus:ring-2 focus:ring-[#7a2d1a]/40"
-            href="#shop"
+
+          {/* Search Button */}
+          <button
+            type="button"
+            aria-label="Search"
+            className="inline-flex items-center justify-center rounded-md p-2 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-[#7a2d1a]/40"
           >
-            <ShoppingBag className="w-4 h-4" /> Shop for Home
-          </a>
+            <Search className="h-5 w-5" />
+          </button>
+
+          {/* Shop CTA */}
+          <Link
+            to="/shop"
+            className="inline-flex items-center gap-2 rounded-lg bg-[#7a2d1a] text-white px-3 py-2 shadow focus:outline-none focus:ring-2 focus:ring-[#7a2d1a]/40"
+          >
+            <ShoppingBag className="w-4 h-4" />
+            Shop for Home
+          </Link>
         </nav>
 
-        {/* Mobile drawer */}
-        {open && (
-          <div className="fixed inset-0 z-50 lg:hidden">
-            <div
-              className="absolute inset-0 bg-black/40"
-              onClick={() => setOpen(false)}
-              aria-hidden="true"
-            />
-            <aside
-              id="mobile-drawer"
-              ref={panelRef}
-              role="menu"
-              aria-label="Mobile"
-              className="absolute inset-y-0 left-0 w-[82vw] max-w-80 bg-[#e8dfd6] shadow-2xl p-4 flex flex-col"
-            >
-              <div className="flex items-center justify-between pb-2 border-b border-[#d7cfc6]">
-                <Logo />
-                <button
-                  className="p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7a2d1a]/40"
-                  onClick={() => setOpen(false)}
-                  aria-label="Close navigation"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-
-              <nav className="py-4 space-y-1" aria-label="Mobile primary">
-                {links.map((l, i) => (
-                  <a
-                    key={l.label}
-                    ref={i === 0 ? firstLinkRef : null}
-                    className="block px-2 py-3 rounded-md hover:bg-white focus:bg-white focus:outline-none"
-                    href={l.href}
-                    role="menuitem"
-                    onClick={() => setOpen(false)}
-                  >
-                    {l.label}
-                  </a>
-                ))}
-                <a
-                  className="mt-2 inline-flex items-center gap-2 rounded-lg bg-[#7a2d1a] text-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#7a2d1a]/40"
-                  href="#shop"
-                  role="menuitem"
-                  onClick={() => setOpen(false)}
-                >
-                  <ShoppingBag className="w-4 h-4" /> Shop for Home
-                </a>
-              </nav>
-            </aside>
-          </div>
-        )}
+        {/* Mobile Toggle */}
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="lg:hidden inline-flex items-center justify-center rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-[#7a2d1a]/40"
+          aria-label="Toggle menu"
+        >
+          {open ? <X /> : <Menu />}
+        </button>
       </div>
-    </nav>
+
+      {/* Mobile Menu */}
+      {open && (
+        <div
+          ref={menuRef}
+          className="lg:hidden border-t bg-white shadow-md"
+          role="menu"
+        >
+          <div className="px-4 py-3 space-y-1">
+            {links.map((l, i) => (
+              <Link
+                key={l.label}
+                ref={i === 0 ? firstLinkRef : null}
+                to={l.href}
+                className="block px-2 py-3 rounded-md hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                role="menuitem"
+                onClick={() => setOpen(false)}
+              >
+                {l.label}
+              </Link>
+            ))}
+
+            {/* Search (Mobile) */}
+            <button
+              type="button"
+              className="w-full mt-2 inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-[#7a2d1a]/40"
+            >
+              <Search className="h-5 w-5" />
+              Search
+            </button>
+
+            {/* Shop CTA (Mobile) */}
+            <Link
+              to="/shop"
+              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-[#7a2d1a] text-white px-3 py-2 w-full justify-center focus:outline-none focus:ring-2 focus:ring-[#7a2d1a]/40"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+            >
+              <ShoppingBag className="w-4 h-4" />
+              Shop for 
+            </Link>
+          </div>
+        </div>
+      )}
+    </header>
   );
 }
-
-const defaultLinks = [
-  { label: "Home", href: "#" },
-  { label: "Testimonials", href: "#" },
-  { label: "Sourcing", href: "#" },
-  { label: "Newsletter", href: "#" },
-  { label: "Products", href: "#products" },
-  { label: "Contact Us", href: "#contact" },
-];

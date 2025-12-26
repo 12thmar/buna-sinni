@@ -6,6 +6,8 @@ import Newsletter from "./components/Newsletter.jsx";
 import Offerings from "./components/Offerings.jsx";
 import ContactUs from "./components/ContactUs.jsx";
 import Footer from "./components/Footer.jsx";
+import Coffees from "./components/Coffees";
+import Shop from "./pages/Shop";
 
 export default function App() {
   return (
@@ -26,8 +28,21 @@ export default function App() {
                 </>
               }
             />
+            <Route path="/products" element={<Coffees />} />
+            <Route path="/shop" element={<Shop />} />
             {/* Contact page */}
-            <Route path="/contact" element={<ContactUs />} />
+            <Route path="/contactus" element={<ContactUs />} />
+            <Route
+              path="/shop"
+              element={
+                <div className="mx-auto max-w-6xl px-4 py-12">
+                  <h1 className="text-3xl font-semibold">Shop</h1>
+                  <p className="mt-2 text-slate-600">
+                    Coming soon — shopping cart and checkout will be added here.
+                  </p>
+                </div>
+              }
+            />
           </Routes>
         </main>
         <Footer />
