@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { Search, Menu, X, ShoppingBag } from "lucide-react";
 
+
 const navItems = [
   { label: "Testimonials", href: "/#testimonials", kind: "anchor" },
   { label: "Sourcing", href: "/#sourcing", kind: "anchor" },

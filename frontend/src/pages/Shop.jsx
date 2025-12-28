@@ -110,7 +110,7 @@ export default function Shop() {
               </p>
             </div>
             <Link
-              to="/contact"
+              to="/contactus"
               className="inline-flex justify-center rounded-full bg-black px-5 py-2.5 text-sm font-medium text-white hover:opacity-90"
             >
               Contact BunaRoots
