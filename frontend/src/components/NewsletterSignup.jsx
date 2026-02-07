@@ -12,7 +12,7 @@ export default function NewsletterSignup({
 
   const endpoint = useMemo(() => {
     const base = (apiBaseUrl || "").replace(/\/+$/, "");
-    return `${base}/newsletter/subscribe`;
+    return `${base}/api/newsletter/subscribe`;
   }, [apiBaseUrl]);
 
   const isLight = theme === "light";
