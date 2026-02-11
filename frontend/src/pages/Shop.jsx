@@ -7,29 +7,40 @@ export default function Shop() {
     <main>
       {/* Page hero (text left, image right) */}
       <PageHero
-        kicker="Launching soon"
-        title="Shop BunaRoots at home"
-        subtitle="We’re building a smooth shopping experience—subscriptions, origin drops, and bulk orders."
-        imageSrc="/images/shop-hero.png"
-        imageAlt="Ethiopian coffee ceremony"
-        actions={
-            <>
-            <a
-                href="#notify"
-                className="rounded-full bg-[#7a2d1a] px-5 py-2.5 text-sm font-medium text-white hover:opacity-95"
-            >
-                Notify me
-            </a>
-            <Link
-                to="/products"
-                className="rounded-full bg-black/5 px-5 py-2.5 text-sm font-medium text-black hover:bg-black/10"
-            >
-                Explore origins
-            </Link>
+              kicker="Launching soon"
+              title="Shop BunaRoots at home"
+              subtitle="We’re building a smooth shopping experience—subscriptions, origin drops, and bulk orders."
+              image={{
+                webp: {
+                  srcSet: "/images/jebena_a_1000w.webp 1000w, /images/jebena_a_1600w.webp 1600w",
+                },
+                jpg: {
+                  src: "/images/bunna_1600w.jpg",
+                  srcSet: "/images/jebena_a_1000w.jpg 1000w, /images/jebena_a_1600w.jpg 1600w",
+                },
+                alt: "Ethiopian coffee ceremony",
+                // Optional:
+                // sizes: "(max-width: 900px) 100vw, 900px",
+                // loading: "eager",
+                // fetchPriority: "high",
+              }}
+              actions={
+                <>
+                <a
+                    href="#notify"
+                    className="rounded-full bg-[#7a2d1a] px-5 py-2.5 text-sm font-medium text-white hover:opacity-95"
+                >
+                    Notify me
+                </a>
+                <Link
+                    to="/products"
+                    className="rounded-full bg-black/5 px-5 py-2.5 text-sm font-medium text-black hover:bg-black/10"
+                >
+                    Explore origins
+                </Link>
             </>
         }
       />
-
       {/* CONTENT */}
       <section className="mx-auto max-w-7xl px-4 py-10 sm:py-12">
         <div className="grid gap-6 lg:grid-cols-3">

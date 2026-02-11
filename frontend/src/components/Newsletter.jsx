@@ -46,11 +46,23 @@ export default function Newsletter() {
 
           {/* image side */}
           <div className="relative overflow-hidden rounded-3xl border border-black/10 shadow-sm">
-            <img
-              src="/images/coffee-beans.jpg"
-              alt="Coffee beans"
-              className="h-full w-full object-cover"
-            />
+            <picture>
+              <source
+                type="image/webp"
+                srcSet="/images/bunna_1000w.webp 1000w, /images/bunna_1600w.webp 1600w"
+                sizes="(max-width: 1024px) 100vw, 50vw"
+              />
+              <img
+                src="/images/bunna_1600w.jpg"
+                srcSet="/images/bunna_1000w.jpg 1000w, /images/bunna_1600w.jpg 1600w"
+                sizes="(max-width: 1024px) 100vw, 50vw"
+                alt="Green coffee beans"
+                className="h-full w-full object-cover"
+                loading="lazy"
+                decoding="async"
+              />
+            </picture>
+
             <div className="absolute inset-0 bg-gradient-to-tr from-black/55 via-black/15 to-transparent" />
             <div className="absolute bottom-5 left-5 right-5">
               <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs text-white backdrop-blur">

@@ -47,25 +47,23 @@ export default function ContactUs() {
         kicker="Get in touch"
         title="Contact Our Team"
         subtitle="Wholesale inquiries, partnerships, or general questions — we’re happy to hear from you."
-        imageSrc="/images/coffee-beans.jpg"
-        imageAlt="Coffee beans"
-        actions={
-          <>
-            <Link
-              to="/products"
-              className="rounded-full bg-black/5 px-5 py-2.5 text-sm font-medium text-black hover:bg-black/10"
-            >
-              View Products
-            </Link>
-            <a
-              href="#contact-form"
-              className="rounded-full bg-[#7a2d1a] px-5 py-2.5 text-sm font-medium text-white hover:opacity-95"
-            >
-              Send a message
-            </a>
-          </>
-        }
-      />
+        image={{
+          webp: {
+            srcSet: "/images/sinni_a_1000w.webp 1000w, /images/sinni_a_1600w.webp 1600w",
+          },
+          jpg: {
+            src: "/images/sinni_a_1600w.jpg",
+            srcSet: "/images/sinni_a_1000w.jpg 1000w, /images/sinni_a_1600w.jpg 1600w",
+          },
+          alt: "Green coffee beans",
+          // Optional:
+          // sizes: "(max-width: 900px) 100vw, 900px",
+          // loading: "eager",
+          // fetchPriority: "high",
+        }}
+      >
+        {/* actions / children here */}
+      </PageHero>
 
       <section id="contact-form" className="mx-auto max-w-7xl px-4 py-10">
         <div className="grid gap-10 md:grid-cols-2">
